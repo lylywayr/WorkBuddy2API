@@ -1044,12 +1044,12 @@ func TestModelsEndpoint(t *testing.T) {
 	}
 	found := false
 	for _, m := range data {
-		if m.(map[string]any)["id"] == "cn:glm-5.2" {
+		if m.(map[string]any)["id"] == "glm-5.2" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("cn:glm-5.2 missing")
+		t.Error("glm-5.2 missing")
 	}
 }
 
@@ -1082,18 +1082,19 @@ func TestModelsDynamic(t *testing.T) {
 	for _, m := range data {
 		ids[m.(map[string]any)["id"].(string)] = true
 	}
-	if !ids["cn:dyn-model-a"] || !ids["cn:glm-9.9"] {
+	if !ids["dyn-model-a"] || !ids["glm-9.9"] {
 		t.Errorf("dynamic ids missing: %v", ids)
 	}
 
 	// 断言字段映射：maxInputTokens → context_length，maxOutputTokens → max_output_tokens
 	for _, m := range data {
 		mm := m.(map[string]any)
-		// 注意 id 带 "cn:" 路由前缀：此处曾写裸名导致三个 case 全部失配，
-		// 块内所有字段断言从未执行——字段改名（supported_efforts →
-		// reasoning_supported_efforts）时测试没变红就是这个原因。
+		// 注意 2026-11-17 起 /v1/models 的 CN 条目发布裸 ID（无 cn: 前缀，
+		// OpenMinis/models.dev 归一化匹配需要）；请求侧裸名与前缀两形态等价。
+		// 历史教训存档：此前 case 曾写错 ID 形态导致三个 case 全部失配，块内
+		// 所有字段断言从未执行——字段改名时测试没变红就是这个原因。
 		switch mm["id"] {
-		case "cn:dyn-model-a":
+		case "dyn-model-a":
 			if mm["context_length"].(float64) != 65536 {
 				t.Errorf("dyn-model-a context_length=%v want 65536", mm["context_length"])
 			}
@@ -1118,7 +1119,7 @@ func TestModelsDynamic(t *testing.T) {
 			if len(outMods) != 1 || outMods[0] != "text" {
 				t.Errorf("dyn-model-a output_modalities=%v want [text]", mm["output_modalities"])
 			}
-		case "cn:dyn-model-b":
+		case "dyn-model-b":
 			// 上游未返回 reasoning → 两个档位字段都省略（客户端按自身默认）
 			if _, has := mm["reasoning_supported_efforts"]; has {
 				t.Errorf("dyn-model-b reasoning_supported_efforts should be omitted, got %v", mm["reasoning_supported_efforts"])
@@ -1126,7 +1127,7 @@ func TestModelsDynamic(t *testing.T) {
 			if _, has := mm["reasoning_default_effort"]; has {
 				t.Errorf("dyn-model-b reasoning_default_effort should be omitted")
 			}
-		case "cn:glm-9.9":
+		case "glm-9.9":
 			if mm["context_length"].(float64) != 262144 {
 				t.Errorf("glm-9.9 context_length=%v want 262144", mm["context_length"])
 			}
@@ -2115,10 +2116,10 @@ func TestModelsHiddenFiltered(t *testing.T) {
 	for _, m := range resp.Data {
 		ids[m.ID] = true
 	}
-	if !ids["cn:glm-5.2"] {
+	if !ids["glm-5.2"] {
 		t.Errorf("visible model missing from list: ids=%v", ids)
 	}
-	if ids["cn:deepseek-v3"] {
+	if ids["deepseek-v3"] {
 		t.Errorf("hidden model leaked into /v1/models: ids=%v", ids)
 	}
 }

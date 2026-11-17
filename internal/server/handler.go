@@ -442,19 +442,31 @@ func applyModelInfoFields(entry map[string]any, mi upstream.ModelInfo) map[strin
 	return entry
 }
 
-// modelList 模型列表：CN 模型输出统一加 "cn:" 前缀（gateway 路由协议，与 resolveModel
-// 对称）；global.enabled=true 时追加 global: 前缀的国际版名单。
+// modelList 模型列表：CN 模型输出**裸 ID**（无 "cn:" 前缀）；global.enabled=true
+// 时追加 "global:" 前缀的国际版名单。
 // 纯动态：动态拉取失败/无号 → 该域空列表，无静态兜底。
+//
+// 为什么 CN 走裸名（2026-11-17，OpenMinis 能力声明链路）：OpenAI 兼容客户端
+// （OpenMinis 等）的 /v1/models 解析不读任何思考字段，思考能力靠 models.dev
+// 目录按归一化 ID 匹配补全（split("/").last → lowercase → '.'/'_'→'-'，冒号
+// 保留）。带 "cn:" 前缀的 ID 归一化后（cn:glm-5-3）在目录里查无此模型 →
+// 思考能力「未知」。裸 ID（glm-5.3 → glm-5-3）能命中目录（glm/deepseek/kimi/
+// minimax 等 14/18 实测可匹配），OpenMinis 自动补 supportsReasoning/档位/
+// 思维链字段名。请求侧两种形态等价：resolveModel 对裸名按 cn 域解析并允许
+// 跨域回退，旧 "cn:" 前缀请求继续可用；路由协议不变，变的是**列表里展示的
+// ID 形态**。global 域保留前缀，避免与 CN 裸名撞车。
 func (h *Handler) modelList() []map[string]any {
 	out := make([]map[string]any, 0)
 	// models.hidden 黑名单：快照外提，避免逐条目重复 Load。
+	// NormalizeHiddenModels 把裸名条目归一化为 "cn:"+m / "global:"+m 双键，
+	// 故此处统一按 "cn:"+ID 查询即可覆盖「cn:xx」与「裸名 xx」两种配置写法。
 	hidden := h.loadLive().HiddenModels
 	for _, mi := range h.fetchDynamicModels() {
 		if _, ok := hidden["cn:"+mi.ID]; ok {
 			continue
 		}
 		entry := map[string]any{
-			"id":       "cn:" + mi.ID,
+			"id":       mi.ID,
 			"object":   "model",
 			"created":  1753600000,
 			"owned_by": "workbuddy",
