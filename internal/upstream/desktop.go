@@ -1,11 +1,11 @@
-// desktop.go 桌面客户端（WorkBuddy Desktop 5.5.6）行为指纹上报。
+// desktop.go 桌面客户端（WorkBuddy Desktop 5.11.3）行为指纹上报。
 //
 // 来源：2026-09-12 Sunny 抓包实测（data/desktop-task-protocol.md）。桌面端点亮
 // 「需电脑端」类任务的关键不是独立端点，而是同一 POST /v2/report 通道上
 // **不同的客户端指纹**：
 //
 //	POST https://copilot.tencent.com/v2/report        ← chatBase（CLI 上报走 billingBase）
-//	User-Agent: WorkBuddy/5.5.6 WorkBuddy/5.5.6 CLI/2.137.1
+//	User-Agent: WorkBuddy/5.11.3 WorkBuddy/5.11.3 CLI/2.176.0
 //	X-Domain: copilot.tencent.com, X-Product: SaaS, X-User-Id: <uid>
 //	Body: [ {...event...} ]                           ← 数组
 //
@@ -40,8 +40,9 @@ import (
 const (
 	desktopReportPath    = "/v2/report"
 	desktopAppearanceSet = "/v2/user-asset/appearance/set"
-	// desktopUA 实测桌面客户端 UA（5.5.6 内嵌 CLI 2.137.1）。
-	desktopUA = "WorkBuddy/5.5.6 WorkBuddy/5.5.6 CLI/2.137.1"
+	// desktopUA 实测桌面客户端 UA（2026-11-18 审计对齐 5.11.3，内嵌 CLI 2.176.0
+	// @genie/agent-cli；三段式拼装形态同官方 auth 头组 asar 证据）。
+	desktopUA = "WorkBuddy/5.11.3 WorkBuddy/5.11.3 CLI/2.176.0"
 )
 
 // desktopBase 桌面端 /v2/report 与 user-asset 走 chatBase（copilot.tencent.com）。
@@ -71,11 +72,11 @@ func desktopFingerprint(a *auth.Auth) map[string]any {
 		"commit":       "5f9692923c93033111c51ad7b003eb80204a9b75",
 		"ideName":      "WorkBuddy",
 		"ideType":      "WorkBuddy",
-		"ideVersion":   "5.5.6",
+		"ideVersion":   "5.11.3",
 		"machineId":    deriveID(a, "machine"),
 		"sessionId":    deriveID(a, "session"),
 		"extName":      "workbuddy-desktop",
-		"extVersion":   "5.5.6",
+		"extVersion":   "5.11.3",
 		"os":           "win32",
 		"arch":         "x64",
 		"osVersion":    "10.0.26220",

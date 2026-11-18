@@ -14,12 +14,14 @@ import (
 
 const (
 	// defaultClientVersion 出站 WorkBuddy 客户端版本段（UA 的 `WorkBuddy/<ver>` 与
-	// 白名单头组的 X-IDE-Version）。对齐官方 WorkBuddy Desktop 分发包版本（5.5.4）。
+	// 白名单头组的 X-IDE-Version）。对齐官方 WorkBuddy Desktop 分发版 5.11.3
+	// （2026-11-18 伪装审计：D 盘 5.11.3 实测，内嵌 CLI 2.176.0）。
 	// config upstream.client_version 可覆盖（空 = 内置默认）。
-	defaultClientVersion = "5.5.4"
-	// defaultCliVersion 出站 UA 中 `CLI/<ver>` 段版本。对齐官方内置 CLI（2.137.1）。
+	defaultClientVersion = "5.11.3"
+	// defaultCliVersion 出站 UA 中 `CLI/<ver>` 段版本。对齐官方内置 CLI
+	// （@genie/agent-cli 2.176.0，5.11.3 实测）。
 	// config upstream.cli_version 可覆盖（空 = 内置默认）。
-	defaultCliVersion = "2.137.1"
+	defaultCliVersion = "2.176.0"
 
 	originRefererCN     = "https://www.codebuddy.cn"
 	originRefererGlobal = "https://www.workbuddy.ai"
@@ -116,31 +118,17 @@ func (c *Client) injectDeviceToken(req *http.Request, a *auth.Auth) {
 }
 
 // deriveAccountStableID 按 uid + 用途盐稳定派生 36 hex 设备/会话标识。
-// 跨重启稳定（固定盐 "wb2a:"，不随进程换——这是与 session 包派生盐的本质差异：
-// 那是会话键维度的进程级随机盐，重启换新；本函数是账号维度，必须跨重启恒定）、
-// 账号间互异（uid 不同则不同）、同 uid 同用途恒同值（幂等）。用 sha256 与项目
-// 既有派生（session/ids.go、cache_key.go）保持一致；截 36 hex 提供更长熵。
+// 跨重启稳定（固定盐 "wb2a:"，不随进程换）、账号间互异、同 uid 同用途恒同值。
 //
-// 两个用途：
-//   - purpose="machine" → X-Machine-ID（设备级，跨会话稳定）
-//   - purpose="session" → X-Session-ID（账号固定会话，跨重启稳定）
-//
-// 与 injectDeviceToken 的 X-Device-Token 并存不冲突：那是登录时上游签发的
-// 真实设备令牌（有则发，权威）；本对头是「每账号一台固定虚拟设备」的稳定指纹，
-// 防多号被上游按设备指纹缺失/漂移关联风控。两者是不同头族，官方桌面端都发。
+// [2026-11-18 伪装审计后退役] 原用于 X-Machine-ID / X-Session-ID 请求头，
+// 当时注释称「官方桌面端都发」——经对官方 5.5.x 与 5.11.3 客户端 asar
+// 双重比对，两版 JS 层**均从未发过**这对头（官方设备标识走
+// X-Device-Id-List(qimei36) + X-Device-Token 头族）。官方不发的头我们每请求
+// 发 = 反向指纹，已从 CommonHeaders 移除。函数保留：desktop 事件体里的
+// machineId/qimei36 载荷字段（非 HTTP 头，官方确有）仍由它派生。
 func deriveAccountStableID(uid, purpose string) string {
 	sum := sha256.Sum256([]byte("wb2a:" + purpose + ":" + uid))
 	return hex.EncodeToString(sum[:18]) // 36 hex chars
-}
-
-// injectAccountStableHeaders 在 req 注入 X-Machine-ID / X-Session-ID：按 uid 稳定
-// 派生，跨重启固定、账号间互异。uid 为空时不注入（匿名请求无设备标识，上游不要求）。
-func (c *Client) injectAccountStableHeaders(req *http.Request, a *auth.Auth) {
-	if a == nil || a.UID == "" {
-		return
-	}
-	req.Header.Set("X-Machine-ID", deriveAccountStableID(a.UID, "machine"))
-	req.Header.Set("X-Session-ID", deriveAccountStableID(a.UID, "session"))
 }
 
 // CommonHeaders 设置所有 API 共享的请求头。
@@ -159,10 +147,12 @@ func (c *Client) CommonHeaders(req *http.Request, a *auth.Auth) {
 	// Accept-Language 按 realm 切（D5）：CN zh-CN，global en-US。官方客户端按账号域
 	// 发对应语言标识，对齐避免上游风控按语言缺失误判。
 	req.Header.Set("Accept-Language", acceptLanguageFor(a))
-	// X-Machine-ID / X-Session-ID：按 uid 稳定派生的账号级设备头（见
-	// injectAccountStableHeaders）。注入在 CommonHeaders——chat 经 ChatHeaders
-	// 叠加 CommonHeaders 天然继承；billing 域另行注入，全出站覆盖。
-	c.injectAccountStableHeaders(req, a)
+	// X-Custom-Channel-Id（5.11.3 新增）：官方 auth-state 头族默认值 'unknown'
+	// （WorkbuddyAuthStateHeaderProvider，asar 逆向 2026-11-18）。auth-state 是
+	// 全局注入钩子，chat/refresh/models 等所有带鉴权出站都随发。
+	req.Header.Set("X-Custom-Channel-Id", "unknown")
+	// [退役 2026-11-18] X-Machine-ID / X-Session-ID 已移除：官方 5.5.x/5.11.3
+	// 双版比对均不发这对头（见 deriveAccountStableID 注释），发 = 反向指纹。
 }
 
 // acceptLanguageFor 按账号 realm 返回 Accept-Language：global → en-US，cn → zh-CN。
@@ -236,6 +226,9 @@ func (c *Client) ChatHeaders(req *http.Request, a *auth.Auth, clientIP string, m
 	c.injectClientIP(req, clientIP)
 	// 设备风控头：auth 每号 > config 全局 > 文件兜底；空则不注入。
 	c.injectDeviceToken(req, a)
+	// X-Private-Data: true（5.11.3 新增）：官方 auth 头组固定携带
+	// （asar：t[`X-Private-Data`]=`true`，与 X-IDE-* 同组装）。
+	req.Header.Set("X-Private-Data", "true")
 	// 会话头族（对话/请求/消息/B3 链路），见 injectConversationHeaders。
 	c.injectConversationHeaders(req, meta)
 }
@@ -273,7 +266,13 @@ func (c *Client) injectConversationHeaders(req *http.Request, meta ChatMeta) {
 		// 本级补一个 32 hex，调用方（handler）已生成稳定的不走到这里。
 		convReqID = session.NewMessageID()
 	}
-	messageID := session.NewMessageID()
+	messageID := session.NewConversationID()
+	// messageID（X-Conversation-Message-ID / X-Request-ID）：官方 5.11.3 形态为
+	// 带横线 UUID（asar：e.set(`X-Request-ID`, randomUUID())，36 字符），
+	// 2026-11-18 审计前本网关发 32 hex 无横线，已修正。
+	// B3-SpanId 与 messageID 解耦（官方 applyTraceHeaders 独立随机 16 hex），
+	// 避免带横线 UUID 前 16 位含 '-' 破坏 B3 规范。
+	spanID := session.NewMessageID()[:16]
 	// 会话头三元组必须齐全：国际端点收紧通道校验后，缺 X-Conversation-ID 的
 	// 请求会直接 400 / 11128（conversation id missing）。入站没带会话 ID 时
 	// 本级补一个 32 hex（与 X-Conversation-Request-ID 的零值兜底同口径），
@@ -294,10 +293,10 @@ func (c *Client) injectConversationHeaders(req *http.Request, meta ChatMeta) {
 	req.Header.Set("X-Trace-ID", traceID)
 	b3Trace := convReqID
 	if !validTraceID(b3Trace) {
-		b3Trace = messageID // 非法 B3 TraceId → 回落恒 32 hex 的消息级 ID
+		b3Trace = spanID + spanID // 非法 B3 TraceId → 回落恒 32 hex（两段独立 16 hex 拼接）
 	}
 	req.Header.Set("X-B3-TraceId", b3Trace)
-	req.Header.Set("X-B3-SpanId", messageID[:16])
+	req.Header.Set("X-B3-SpanId", spanID)
 	req.Header.Set("X-B3-Sampled", "1")
 }
 
@@ -339,6 +338,10 @@ func (c *Client) injectAttribution(req *http.Request) {
 		req.Header.Set("X-Product", "SaaS")
 		return
 	}
+	// X-Agent-Intent: craft（5.11.3 新增）：官方 ACP 头组与 X-Agent-Purpose
+	// 并列固定携带（asar：e.set(`X-Agent-Intent`,`craft`),
+	// e.set(`X-Agent-Purpose`,`conversation`)）。
+	req.Header.Set("X-Agent-Intent", "craft")
 	req.Header.Set("X-Agent-Purpose", "conversation")
 	req.Header.Set("X-IDE-Name", name)
 	req.Header.Set("X-IDE-Type", name)
@@ -375,6 +378,16 @@ func ExtractClientIP(r *http.Request) string {
 	return ""
 }
 
+// billingAcceptLanguage billing 域的 Accept-Language（5.11.3 实测）：官方
+// resolveBillingAcceptLanguage 仅返回语言码 'zh'/'en'（无地区后缀）——
+// 与 chat 域的 zh-CN/en-US 不同口径，混用会是形态差异（2026-11-18 审计修正）。
+func billingAcceptLanguage(a *auth.Auth) string {
+	if a != nil && a.IsGlobal() {
+		return "en"
+	}
+	return "zh"
+}
+
 // BillingHeaders billing 接口请求头。
 // UA 语义：默认**不设置**（保持现状，Go 客户端自带默认 UA）；仅当显式配置
 // c.UserAgent 非空才覆盖——避免默认路径给 billing 引入新的 UA 指纹。
@@ -384,8 +397,10 @@ func (c *Client) BillingHeaders(req *http.Request, a *auth.Auth) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	c.injectCodeBuddyRequest(req)
-	// Accept-Language 按 realm 切（D5，billing 域未走 CommonHeaders，单独注入）。
-	req.Header.Set("Accept-Language", acceptLanguageFor(a))
+	// Accept-Language 按 billing 域官方口径（'zh'/'en'，2026-11-18 审计修正）。
+	req.Header.Set("Accept-Language", billingAcceptLanguage(a))
+	// X-Custom-Channel-Id（5.11.3 auth-state 头族，billing 域同随发）。
+	req.Header.Set("X-Custom-Channel-Id", "unknown")
 	if c != nil && c.UserAgent != "" {
 		req.Header.Set("User-Agent", c.UserAgent)
 	} else if ua := c.billingUA(); ua != "" {

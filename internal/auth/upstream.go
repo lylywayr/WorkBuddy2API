@@ -7,7 +7,7 @@ package auth
 // 是唯一不会引入反向依赖的归属。
 //
 // 注意 CLI/2.63.2 是登录端点的固定取值，**不要**与 internal/upstream 的
-// defaultCliVersion(2.137.1) 或 desktopUA(2.137.1) 统一——后者是桌面上行 UA，
+// defaultCliVersion(2.176.0) 或 desktopUA(2.176.0) 统一——后者是桌面上行 UA，
 // 前者是设备授权端点认的版本，两者取值不同是有意的。
 const (
 	// UpstreamBaseCN 国内版上游 base（Origin 为 codebuddy.cn）。

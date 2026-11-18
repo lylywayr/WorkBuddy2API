@@ -20,19 +20,30 @@ func TestChatHeadersAlwaysSendConversationTrio(t *testing.T) {
 	}
 	c.ChatHeaders(req, testAuth(), "", ChatMeta{})
 
+	// 兜底 ID 形态（2026-11-18 审计对齐官方 5.11.3）：
+	// X-Conversation-ID / X-Conversation-Request-ID 为 32 hex（UUID 去横线），
+	// X-Conversation-Message-ID / X-Request-ID 为带横线 UUID（randomUUID）。
 	hex32 := regexp.MustCompile(`^[0-9a-f]{32}$`)
-	for _, h := range []string{
-		"X-Conversation-ID",
-		"X-Conversation-Request-ID",
-		"X-Conversation-Message-ID",
+	uuid36 := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	for _, h := range []struct {
+		name string
+		re   *regexp.Regexp
+	}{
+		{"X-Conversation-ID", hex32},
+		{"X-Conversation-Request-ID", hex32},
+		{"X-Conversation-Message-ID", uuid36},
 	} {
-		v := req.Header.Get(h)
+		v := req.Header.Get(h.name)
 		if v == "" {
-			t.Fatalf("%s missing (通道校验会拒绝缺少会话三元组的请求)", h)
+			t.Fatalf("%s missing (通道校验会拒绝缺少会话三元组的请求)", h.name)
 		}
-		if !hex32.MatchString(v) {
-			t.Errorf("%s = %q, want 32 hex", h, v)
+		if !h.re.MatchString(v) {
+			t.Errorf("%s = %q, want 形态 %s", h.name, v, h.re.String())
 		}
+	}
+	// X-Request-ID 与 X-Conversation-Message-ID 同值（官方同源 randomUUID）。
+	if req.Header.Get("X-Request-ID") != req.Header.Get("X-Conversation-Message-ID") {
+		t.Error("X-Request-ID should equal X-Conversation-Message-ID")
 	}
 
 	// 兜底会话 ID 每次请求新生成（不是常量），且与 request/message ID 不冲突。
