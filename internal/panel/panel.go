@@ -196,6 +196,10 @@ func (p *Panel) routes() {
 	p.mux.HandleFunc("GET /panel/api/compensation", p.withAuth(p.compensation))
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/compensation", p.withAuth(p.accountCompensationClaim))
 	p.mux.HandleFunc("POST /panel/api/compensation_all", p.withAuth(p.compensationAll))
+	// 首次初始化向导（setup.go）：无鉴权探测 + 仅出厂默认密钥窗口期可用的
+	// 设置端点。密钥一旦自定义即永久关闭，不构成鉴权旁路。
+	p.mux.HandleFunc("GET /panel/api/setup/status", p.setupStatus)
+	p.mux.HandleFunc("POST /panel/api/setup/key", p.setupKey)
 }
 
 // ServeHTTP 统一入口：先写安全响应头再分发，保证页面、静态资源、API

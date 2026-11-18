@@ -337,10 +337,70 @@ function formatRate(rate) {
 }
 
 /* ── 密钥门 ───────────────────────────────────────────────────────── */
-function openKey() { $('keyVeil').classList.add('on'); setTimeout(() => $('keyInput').focus(), 60); }
+/* 两种形态：
+   ① 登录态（默认）：输入既有密钥进入；
+   ② 初始化向导：api_key 仍是出厂默认（test_key）时（/setup/status 探测），
+     弹窗切换为「设置新密钥」——用户自定义后写入配置并立即热生效，
+     从此向导永久关闭（详见 setup.go）。 */
+let keySetupMode = false;
+
+function openKey() {
+  $('keyVeil').classList.add('on');
+  // 先按登录态渲染（探测请求完成前可见），再按实际状态切换。
+  keyRenderLogin();
+  fetch('/panel/api/setup/status').then(r => r.json()).then(d => {
+    if (d && d.setup_required) { keySetupMode = true; keyRenderSetup(); }
+  }).catch(() => {});
+  setTimeout(() => $('keyInput').focus(), 60);
+}
+function keyRenderSetup() {
+  $('keyTitle').textContent = '初始化：设置访问密钥';
+  $('keyHint').textContent = '首次使用此网关，请自定义你的访问密钥。';
+  $('keyInput').placeholder = '自定义密钥（至少 6 位）';
+  $('keyInput').autocomplete = 'new-password';
+  $('keyConfirmForm').hidden = false;
+  $('setupHint').hidden = false;
+  $('btnKey').textContent = '设置并进入';
+}
+function keyRenderLogin() {
+  $('keyTitle').textContent = '需要访问密钥';
+  $('keyHint').textContent = '该网关已启用 api_key 鉴权，请输入访问密钥（登录后可在「配置」页修改）。';
+  $('keyInput').placeholder = 'api_key';
+  $('keyInput').autocomplete = 'off';
+  $('keyConfirmForm').hidden = true;
+  $('setupHint').hidden = true;
+  $('btnKey').textContent = '进入';
+}
+function keyFail(msg) {
+  const el = $('keyErr');
+  el.textContent = msg;
+  el.hidden = false;
+}
 $('btnKey').onclick = async () => {
   const v = $('keyInput').value.trim();
   if (!v) return;
+  if (keySetupMode) {
+    const v2 = $('keyInput2').value;
+    if (v.length < 6) { keyFail('密钥至少需要 6 个字符。'); return; }
+    if (v !== v2) { keyFail('两次输入的密钥不一致。'); return; }
+    try {
+      const r = await fetch('/panel/api/setup/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: v }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { keyFail(d.error || ('设置失败：HTTP ' + r.status)); return; }
+      // 设置成功：记住新密钥、回到登录态外观、收起弹窗进入面板。
+      localStorage.setItem(LS_KEY, v);
+      keySetupMode = false;
+      keyRenderLogin();
+      $('keyErr').hidden = true;
+      $('keyVeil').classList.remove('on');
+      start();
+    } catch (e) { keyFail('网络错误：' + e.message); }
+    return;
+  }
   localStorage.setItem(LS_KEY, v);
   try {
     await api('overview');
@@ -350,6 +410,7 @@ $('btnKey').onclick = async () => {
   } catch (e) { $('keyErr').hidden = false; }
 };
 $('keyInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnKey').click(); });
+$('keyInput2').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnKey').click(); });
 
 /* ── 路由 ─────────────────────────────────────────────────────────── */
 /* 积分包明细共享缓存：「积分构成」视图与首页「积分到期提醒」卡片共用同一份
