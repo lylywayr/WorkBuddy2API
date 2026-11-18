@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.23-alpine AS build
+# build 阶段固定跑在构建机原生平台（--platform=$BUILDPLATFORM），Go 交叉编译
+# 出目标平台二进制——arm64 不再进 QEMU 模拟编译（go build 在 QEMU 下慢且
+# 易 OOM 崩溃，多架构 CI 的经典坑）。QEMU 仅执行轻量的 runtime 层（apk add）。
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 COPY go.mod ./
 # 防止因为直接使用官方源导致下载失败
@@ -7,11 +12,12 @@ RUN go env -w GOPROXY=https://goproxy.cn,direct && \
     go env GOPROXY && \
     go mod download
 COPY . .
+ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
 # 一次编译全部二进制（工具进镜像，容器内可直接跑脚本）。全部 -trimpath -s -w。
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/wb2api ./cmd/server \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/signin_bin ./cmd/signin \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/login ./cmd/login \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/credit ./cmd/credit
+RUN go build -trimpath -ldflags="-s -w" -o /out/wb2api ./cmd/server \
+ && go build -trimpath -ldflags="-s -w" -o /out/signin_bin ./cmd/signin \
+ && go build -trimpath -ldflags="-s -w" -o /out/login ./cmd/login \
+ && go build -trimpath -ldflags="-s -w" -o /out/credit ./cmd/credit
 
 FROM alpine:3.20
 # python3：login.sh 的 JSON 解析 / 签到 / 落盘；bash：shell 脚本体。
