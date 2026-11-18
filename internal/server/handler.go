@@ -150,6 +150,13 @@ func NewHandler(cfg Config) *Handler {
 	h.mux.HandleFunc("GET /healthz", h.healthz)
 	if cfg.Panel != nil {
 		h.mux.Handle("/panel/", cfg.Panel) // /panel → /panel/ 由 ServeMux 自动重定向
+		// 根路径 302 到面板：NAS Docker 管理界面（飞牛 fnOS 等）容器列表的
+		// 「打开端口」外链只拼 http://host:<port>/（不带路径），面板 UI 却挂在
+		// /panel/ 下——此前从 Docker 页面点外链看到的是 404 而不是面板。
+		// 重定向后面板 HTML 照旧匿名加载（密钥只发给 /panel/api/*，无泄露面）。
+		h.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/panel/", http.StatusFound)
+		})
 	}
 	return h
 }

@@ -2123,3 +2123,29 @@ func TestModelsHiddenFiltered(t *testing.T) {
 		t.Errorf("hidden model leaked into /v1/models: ids=%v", ids)
 	}
 }
+
+func TestRootRedirectsToPanel(t *testing.T) {
+	// 根路径 302 到 /panel/：NAS Docker 管理界面（飞牛 fnOS 等）容器列表的
+	// 「打开端口」外链只拼 http://host:<port>/（不带路径），面板 UI 挂在
+	// /panel/ 下——根路径必须直达面板而不是 404。
+	stub := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	h := NewHandler(Config{Panel: stub, Pool: testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at", ExpiresAt: 9999999999})})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("GET / code=%d want 302, body=%s", rec.Code, rec.Body.String())
+	}
+	if loc := rec.Header().Get("Location"); loc != "/panel/" {
+		t.Fatalf("Location=%q want /panel/", loc)
+	}
+
+	// Panel 未挂载（nil）时根路径行为不变：404（不注册重定向）。
+	h2 := NewHandler(Config{Pool: testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at", ExpiresAt: 9999999999})})
+	rec2 := httptest.NewRecorder()
+	h2.ServeHTTP(rec2, httptest.NewRequest("GET", "/", nil))
+	if rec2.Code != http.StatusNotFound {
+		t.Fatalf("GET / (no panel) code=%d want 404", rec2.Code)
+	}
+}
