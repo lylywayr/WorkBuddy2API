@@ -245,23 +245,21 @@ flowchart LR
 CI 会自动构建多架构镜像（`amd64` / `arm64`）并发布到 GHCR，`git clone` 之外的部署路径：
 
 ```bash
-# 1. 准备配置与数据目录
+# 1. 准备配置与数据目录（config.example.json 的默认密钥为 test_key，
+#    首次打开面板会引导设置面板登录密码；接入客户端的 API 密钥
+#    登录后在面板「配置 → 接入指南」里自定义或随机生成）
 mkdir -p auths data && cp config.example.json config.json
-#    建议编辑 config.json 设置 api_key（或留空由程序自动生成随机密钥）
 
 # 2. 拉取并运行
 docker run -d --name workbuddy2api \
   -p 7863:7863 -e TZ=Asia/Shanghai \
   -v ./auths:/app/auths -v ./data:/app/data -v ./config.json:/app/config.json \
-  ghcr.io/linguo2625469/workbuddy2api-panel:latest
+  ghcr.io/lylywayr/workbuddy2api:latest
 
 # 3. 健康检查（无可用账号时返回 503）
 curl -s http://localhost:7863/healthz
 ```
 
-> **首次发布后须将包设为公开**：GitHub 仓库页 → Packages → `workbuddy2api-panel` →
-> Package settings → Change visibility → Public，否则拉取需要 `docker login ghcr.io`。
->
 > 镜像 tag 规则：`main` 分支推送 `latest` / `main` / `sha-xxxxxx`；打 `v*` tag 额外发布
 > `1.2.3` / `1.2` / `1` 语义化版本；PR 仅构建验证、不推送。
 
@@ -269,12 +267,15 @@ curl -s http://localhost:7863/healthz
 
 ```bash
 # 1. 克隆
-git clone https://github.com/linguo2625469/workbuddy2api-panel.git
-cd workbuddy2api-panel
+git clone https://github.com/lylywayr/WorkBuddy2API.git
+cd WorkBuddy2API
 
 # 2. 准备配置（compose 挂载此文件，缺失会导致容器启动失败）
 cp config.example.json config.json
-#    建议编辑 config.json 设置 api_key（或留空由程序自动生成随机密钥）
+#    默认密钥 test_key：首次打开面板会引导设置面板登录密码；
+#    API 密钥登录后在面板「配置 → 接入指南」自定义或随机生成
+#    （不想本地构建可直接把 compose 的 build 换成镜像
+#      image: ghcr.io/lylywayr/workbuddy2api:latest）
 
 # 3. 启动（首次会构建镜像，约 1-2 分钟）
 docker compose up -d --build
@@ -284,7 +285,7 @@ curl -s http://localhost:7863/healthz
 # {"healthy":0,"total":0,"service":"workbuddy2api"}
 ```
 
-启动后打开 **`http://localhost:7863/panel/`**，用面板「添加账号」完成登录（见下节）。
+启动后打开 **`http://localhost:7863/panel/`**。首次使用示例配置（密钥 `test_key`）会进入**初始化向导**：设置面板登录密码后进入面板，「添加账号」完成登录（见下节）；接入第三方客户端的 API 密钥在「配置 → 接入指南」查看 / 自定义 / 随机生成（与面板密码相互独立，可各自轮换）。
 
 常用运维命令：
 
@@ -297,7 +298,8 @@ docker compose down             # 停止并移除容器（数据在 ./auths 与 
 ### 方式二：Windows 单文件运行（无需 Docker）
 
 ```powershell
-# 1) 下载 Release 中的 wb2api.exe，或从源码构建
+# 1) 下载 Release 中的 wb2api.exe（打 v* 标签时 CI 自动发布五平台
+#    二进制与校验和），或从源码构建：
 go build -trimpath -ldflags="-s -w" -o wb2api.exe ./cmd/server
 
 # 2) 直接运行：首次启动自动生成 config.json（含随机 api_key，日志打印一次）
