@@ -338,10 +338,10 @@ function formatRate(rate) {
 
 /* ── 密钥门 ───────────────────────────────────────────────────────── */
 /* 两种形态：
-   ① 登录态（默认）：输入既有密钥进入；
-   ② 初始化向导：api_key 仍是出厂默认（test_key）时（/setup/status 探测），
-     弹窗切换为「设置新密钥」——用户自定义后写入配置并立即热生效，
-     从此向导永久关闭（详见 setup.go）。 */
+   ① 登录态（默认）：输入面板登录密码（未设置时与 API 密钥一致）进入；
+   ② 初始化向导：面板密码未设且 api_key 仍是出厂默认（test_key）时
+   （/setup/status 探测），弹窗切换为「设置面板登录密码」——用户自定义后
+   写入配置并立即热生效，从此向导永久关闭（详见 setup.go）。 */
 let keySetupMode = false;
 
 function openKey() {
@@ -354,9 +354,9 @@ function openKey() {
   setTimeout(() => $('keyInput').focus(), 60);
 }
 function keyRenderSetup() {
-  $('keyTitle').textContent = '初始化：设置访问密钥';
-  $('keyHint').textContent = '首次使用此网关，请自定义你的访问密钥。';
-  $('keyInput').placeholder = '自定义密钥（至少 6 位）';
+  $('keyTitle').textContent = '初始化：设置面板登录密码';
+  $('keyHint').textContent = '首次使用此网关，请自定义面板登录密码。';
+  $('keyInput').placeholder = '自定义密码（至少 6 位）';
   $('keyInput').autocomplete = 'new-password';
   $('keyConfirmForm').hidden = false;
   $('setupHint').hidden = false;
@@ -364,8 +364,8 @@ function keyRenderSetup() {
 }
 function keyRenderLogin() {
   $('keyTitle').textContent = '需要访问密钥';
-  $('keyHint').textContent = '该网关已启用 api_key 鉴权，请输入访问密钥（登录后可在「配置」页修改）。';
-  $('keyInput').placeholder = 'api_key';
+  $('keyHint').textContent = '请输入面板登录密码（未设置时为 API 密钥；登录后可在「配置」页修改）。';
+  $('keyInput').placeholder = '面板密码 / api_key';
   $('keyInput').autocomplete = 'off';
   $('keyConfirmForm').hidden = true;
   $('setupHint').hidden = true;
@@ -381,23 +381,25 @@ $('btnKey').onclick = async () => {
   if (!v) return;
   if (keySetupMode) {
     const v2 = $('keyInput2').value;
-    if (v.length < 6) { keyFail('密钥至少需要 6 个字符。'); return; }
-    if (v !== v2) { keyFail('两次输入的密钥不一致。'); return; }
+    if (v.length < 6) { keyFail('密码至少需要 6 个字符。'); return; }
+    if (v !== v2) { keyFail('两次输入的密码不一致。'); return; }
     try {
       const r = await fetch('/panel/api/setup/key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: v }),
+        body: JSON.stringify({ password: v }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { keyFail(d.error || ('设置失败：HTTP ' + r.status)); return; }
-      // 设置成功：记住新密钥、回到登录态外观、收起弹窗进入面板。
+      // 设置成功：记住面板密码、回到登录态外观、收起弹窗进入面板。
+      // API 密钥此时仍是出厂默认（test_key），进入配置页的「接入指南」更换。
       localStorage.setItem(LS_KEY, v);
       keySetupMode = false;
       keyRenderLogin();
       $('keyErr').hidden = true;
       $('keyVeil').classList.remove('on');
       start();
+      toast('面板密码已设置。API 密钥仍是出厂默认，建议在「配置 → 接入指南」更换。', 'ok');
     } catch (e) { keyFail('网络错误：' + e.message); }
     return;
   }
@@ -1227,6 +1229,7 @@ const CFG_MAP = {
   domestic_account_order: ['pool', 'account_order', 'domestic'],
   international_account_order: ['pool', 'account_order', 'international'],
   listen: ['listen'], api_key: ['api_key'],
+  panel_password: ['panel', 'password'],
   package_detail_limit: ['panel', 'package_detail_limit'],
   checkin_hours: ['schedule', 'checkin_hours'], checkin_enabled: ['schedule', 'checkin_enabled'], growth_hours: ['schedule', 'growth_hours'], growth_enabled: ['schedule', 'growth_enabled'],
   travel_hours: ['schedule', 'travel_hours'], travel_enabled: ['schedule', 'travel_enabled'],
@@ -1262,10 +1265,13 @@ const CFG_MAP = {
  * 但覆盖型字段正好相反：清空 = 明确要求回到默认。漏发它们会让面板显示"已保存"
  * 而值其实没变（issue #102 附带发现 2：user_agent 清空后 config.json 里仍是旧值）。
  *
+ * 面板登录密码（panel_password）同属覆盖型：清空 = 明确要求恢复「与 API 密钥
+ * 共用」的存量形态；漏发空串会让取消独立密码的操作静默失效。
+ *
  * 刻意不含 api_key：清空它 = 关闭整个鉴权，误触代价是网关变成无鉴权公开服务。
  * 该字段（以及提示文案"留空 = 不鉴权"与现状不符的问题）单独处理。
  */
-const CLEARABLE_CFG = new Set(['user_agent', 'prompt_file']);
+const CLEARABLE_CFG = new Set(['user_agent', 'prompt_file', 'panel_password']);
 
 function dig(obj, path) { return path.reduce((o, k) => (o == null ? undefined : o[k]), obj); }
 function put(obj, path, val) {
@@ -1290,6 +1296,7 @@ async function loadConfig() {
     }
     markDurationFields(); // 回填后重置校验态（清掉残留红框；现值来自后端必然合法）
     $('cfgNote').textContent = '';
+    renderGuide(); // 接入指南：地址/密钥展示随配置回填同步刷新
   } catch (e) { toast('读取配置失败：' + e.message, 'err'); }
 }
 function collectConfig() {
@@ -1312,6 +1319,64 @@ function collectConfig() {
   }
   return out;
 }
+
+/* ── 接入指南（配置页顶部）───────────────────────────────────── */
+/* 密钥体系两分（与后端 panelKey 对应）：面板密码给人（登录面板），
+   API 密钥给机器（客户端 /v1 接入），各自独立可轮换。此处展示接入
+   信息并轮换 API 密钥；改面板密码走表单的「面板登录密码」字段。
+   接入地址用 location.origin 拼接：用户从哪个地址访问面板，客户端
+   就从哪个地址接入（NAS 直连 / 反代 / Tailscale 各自拿到正确形态）。 */
+function renderGuide() {
+  if (!$('guideBase')) return; // 旧 HTML / 测试 harness 无此区块
+  $('guideBase').value = location.origin + '/v1';
+  const k = (cfgLoaded && cfgLoaded.api_key) || '';
+  $('guideKey').value = k;
+  const hint = $('guideKeyHint');
+  if (k === 'test_key') {
+    hint.textContent = '⚠ 仍是出厂默认密钥（test_key），请立即自定义或随机生成';
+    hint.style.color = 'var(--bad)';
+  } else if (k === '') {
+    hint.textContent = '⚠ 未启用鉴权（api_key 为空）：任何知道地址的人都能接入';
+    hint.style.color = 'var(--bad)';
+  } else {
+    hint.textContent = '发给客户端的接入密钥，与面板登录密码相互独立';
+    hint.style.color = '';
+  }
+}
+async function copyText(s) {
+  try { await navigator.clipboard.writeText(s); toast('已复制', 'ok'); }
+  catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = s; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('已复制', 'ok'); }
+    catch (e2) { toast('复制失败，请长按输入框手动复制', 'err'); }
+    ta.remove();
+  }
+}
+if ($('btnCopyBase')) $('btnCopyBase').onclick = () => copyText($('guideBase').value);
+if ($('btnCopyKey')) $('btnCopyKey').onclick = () => copyText($('guideKey').value);
+if ($('btnGenKey')) $('btnGenKey').onclick = () => {
+  const b = new Uint8Array(24);
+  crypto.getRandomValues(b);
+  $('guideNewKey').value = 'sk-' + Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+};
+if ($('btnApplyKey')) $('btnApplyKey').onclick = async () => {
+  const v = $('guideNewKey').value.trim();
+  if (!v) { toast('请先填写新密钥，或点「生成随机密钥」', 'err'); return; }
+  if (v.length < 6) { toast('密钥至少需要 6 个字符', 'err'); return; }
+  try {
+    await api('config', { method: 'POST', body: JSON.stringify({ api_key: v }) });
+    toast('API 密钥已应用并立即生效；请到各客户端同步更换', 'ok');
+    // 面板密码未设置时，面板鉴权也用 api_key：同步本会话避免下一次轮询 401。
+    // 设了面板密码则不动（面板鉴权没变）。
+    if (!(cfgLoaded && cfgLoaded.panel && cfgLoaded.panel.password)) {
+      localStorage.setItem(LS_KEY, v);
+    }
+    $('guideNewKey').value = '';
+    loadConfig();
+  } catch (e) { toast('应用失败：' + e.message, 'err'); }
+};
+
 /* Go 时长字段即时校验：空 = 沿用现值（collectConfig 跳过发送）；非空必须是
    ParseDuration 语法（30m / 2h / 600s / 1h30m，可组合可带小数）。与后端
    config.go normalize() 的 time.ParseDuration 同口径，脏值在前端就地标红，
@@ -1364,8 +1429,10 @@ $('cfgForm').onsubmit = async ev => {
     const n = (r.restart_required || []).length;
     toast(n ? '配置已保存，其中 ' + n + ' 项需重启进程生效' : '配置已保存并立即生效', 'ok');
     // 密钥可能已改：本次会话沿用新值，避免下一次轮询被 401。
-    const k = $('cfgKey').value.trim();
-    if (k) localStorage.setItem(LS_KEY, k);
+    // 面板密码优先（设了它面板只认它）；未设时才同步 API 密钥。
+    const pw = $('cfgPanelPass').value.trim();
+    if (pw) localStorage.setItem(LS_KEY, pw);
+    else { const k = $('cfgKey').value.trim(); if (k) localStorage.setItem(LS_KEY, k); }
     loadConfig();
     loadOverview(true);
   } catch (e) { toast('保存失败：' + e.message, 'err'); }

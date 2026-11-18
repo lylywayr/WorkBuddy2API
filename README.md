@@ -19,7 +19,7 @@
 ---
 
 > [!IMPORTANT]
-> **本 fork 持续维护中（2026-11-11 起由 [lylywayr](https://github.com/lylywayr) 接手）**：
+> **本项目持续维护中（2026-11-11 起由 [lylywayr](https://github.com/lylywayr) 接手）**：
 > 持续修复 bug、跟进客户端兼容与上游活动任务变化，**issue / PR 正常受理**。
 >
 > 原维护者已于 2026-10-21 归档停更，原因存档如下——其中风控形势与滥用警示
@@ -32,11 +32,13 @@
 >
 > **维护方式披露**：本仓库（含接手前后）的 issue / PR 处置、代码审查、测试与修复实现**大量由 AI 辅助完成**（自动化编码 agent），合并与发布决策由维护者作出。请知悉后再使用或参与贡献。
 
-> **本项目是 [Sliverkiss/workbuddy2api](https://github.com/Sliverkiss/workbuddy2api) 的增强分支**（fork）。
-> 上游仓库现已删除；本项目**已同步至上游删库前的最后一次更新**（`ea8b1e5`），此后由本分支独立维护演进。
+> **本项目是 [Sliverkiss/workbuddy2api](https://github.com/Sliverkiss/workbuddy2api) 的增强分支**。
+> 上游仓库现已删除；本项目**已同步至上游删库前的最后一次更新**（`ea8b1e5`），此后由本支线独立维护演进。
 > 在上游基础上重构了可视化运维层；差异概览见 [与上游的差异](#-与上游的差异)，上游设计的精巧之处（账号池调度、错误分类、提示词体系）原样保留，详见下文。
 
-> **本仓库（lylywayr/workbuddy2api-panel）是 [linguo2625469/workbuddy2api-panel](https://github.com/linguo2625469/workbuddy2api-panel) 的 fork**。原维护者 2026-10-21 归档停更后，本 fork 于 2026-11-11 起接手继续维护（含其存续 PR 的整理合入与后续演进），接手后的改动清单见仓库提交历史。
+> **上游项目**：[linguo2625469/workbuddy2api-panel](https://github.com/linguo2625469/workbuddy2api-panel)（原维护者，2026-10-21 归档停更）。
+> 本仓库于 2026-11-11 起接手独立维护（含其存续 PR 的整理合入与后续演进），接手后的改动清单见仓库提交历史。
+> 更早的源头为 [Sliverkiss/workbuddy2api](https://github.com/Sliverkiss/workbuddy2api)（已删库；本支线同步至其删库前最后一次更新 `ea8b1e5`），设计精巧之处（账号池调度、错误分类、提示词体系）原样保留，差异概览见 [与上游的差异](#-与上游的差异)。
 
 > ⚠️ **本项目仅限自用账号（签到 / 保活 / 个人工具接入），不支持同时也是禁止批量小号分发额度、二次打包或收费售卖。** 详见 [使用声明（必读）](#使用声明必读)。
 

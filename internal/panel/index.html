@@ -937,6 +937,33 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
     <section class="view" id="view-config" hidden>
       <form id="cfgForm">
         <div class="box">
+          <header><h3>接入指南</h3><span class="grow"></span><span class="note">OpenAI 兼容接口</span></header>
+          <div class="pad">
+            <div class="grid2">
+              <label class="fld"><span class="lb">接入地址（Base URL）</span>
+                <div class="inline"><input id="guideBase" readonly>
+                <button type="button" class="xs" id="btnCopyBase">复制</button></div>
+                <span class="hint">客户端（OpenMinis 等）OpenAI 兼容接入的 Base URL</span></label>
+              <label class="fld"><span class="lb">API 密钥（API Key）</span>
+                <div class="inline"><input id="guideKey" readonly>
+                <button type="button" class="xs" id="btnCopyKey">复制</button></div>
+                <span class="hint" id="guideKeyHint">发给客户端的接入密钥，与面板登录密码相互独立</span></label>
+            </div>
+            <div class="grid2">
+              <label class="fld"><span class="lb">自定义 API 密钥</span>
+                <input id="guideNewKey" placeholder="留空不修改；至少 6 位">
+                <span class="hint">应用后所有客户端需同步更换密钥</span></label>
+              <div class="fld"><span class="lb">随机生成</span>
+                <div class="inline">
+                <button type="button" class="xs" id="btnGenKey">生成随机密钥</button>
+                <button type="button" class="xs" id="btnApplyKey">应用新密钥</button></div>
+                <span class="hint">随机格式 sk-…；应用后立即生效（网关接入鉴权同步切换）</span></div>
+            </div>
+            <div class="hint">在客户端里添加 OpenAI 兼容服务：Base URL 填上面的接入地址，API Key 填上面的密钥。面板登录密码仅用于进入本面板，不发给任何客户端。</div>
+          </div>
+        </div>
+
+        <div class="box">
           <header><h3>服务</h3><span class="grow"></span><span class="note" id="cfgPath"></span></header>
           <div class="pad">
             <div class="grid2">
@@ -946,11 +973,16 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
               <label class="fld"><span class="lb">API 密钥</span>
                 <div class="inline"><input name="api_key" id="cfgKey" type="password" placeholder="留空 = 不鉴权">
                 <button type="button" class="xs" id="btnEye">显示</button></div>
-                <span class="hint">立即生效（含面板自身）</span></label>
+                <span class="hint">网关 /v1 接入鉴权，立即生效；轮换可在上方「接入指南」操作</span></label>
             </div>
-            <label class="fld"><span class="lb">单账号明细默认展示条数</span>
-              <input name="package_detail_limit" type="number" min="1" placeholder="5">
-              <span class="hint">积分构成页按最早到期展示，其余未用完包聚合</span></label>
+            <div class="grid2">
+              <label class="fld"><span class="lb">面板登录密码</span>
+                <input name="panel_password" id="cfgPanelPass" type="password" placeholder="留空 = 与 API 密钥一致">
+                <span class="hint">设置后面板仅认此密码登录，API 密钥不再能进面板；清空即恢复共用</span></label>
+              <label class="fld"><span class="lb">单账号明细默认展示条数</span>
+                <input name="package_detail_limit" type="number" min="1" placeholder="5">
+                <span class="hint">积分构成页按最早到期展示，其余未用完包聚合</span></label>
+            </div>
           </div>
         </div>
 
@@ -1349,7 +1381,7 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
     <div class="body">
       <form style="display:contents" onsubmit="return false"><input type="password" id="keyInput" placeholder="api_key" autocomplete="off"></form>
       <form style="display:contents" onsubmit="return false" id="keyConfirmForm" hidden><input type="password" id="keyInput2" placeholder="再输入一次确认" autocomplete="new-password" style="margin-top:10px"></form>
-      <div class="hint" id="setupHint" hidden style="margin-top:10px">首次使用此网关：请自定义一个访问密钥（至少 6 位）。它将写入配置并立即生效，此后网关与面板都用它鉴权，请牢记。</div>
+      <div class="hint" id="setupHint" hidden style="margin-top:10px">首次使用此网关：请自定义面板登录密码（至少 6 位）。它只用于进入本面板；接入客户端的 API 密钥登录后在「配置 → 接入指南」里单独设置，请牢记。</div>
       <div class="state err" id="keyErr" hidden style="margin-top:10px">密钥不正确，请重试。</div>
     </div>
     <footer>

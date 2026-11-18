@@ -1,25 +1,28 @@
 package panel
 
-// setup.go 面板首次初始化向导：「首次进入由用户自定义访问密钥」。
+// setup.go 面板首次初始化向导：「首次进入由用户自定义面板登录密码」。
 //
 // 背景：密钥门的提示是「请输入 config.json 中的密钥」——对不看配置文件的
-// 用户等于没说（他既不知道值在哪、也改不动它）。新部署的出厂默认密钥
-// （config.example.json 的 api_key="test_key"）必须被替换成用户自己的密钥
-// 才算完成初始化，于是把这一步做成向导：
+// 用户等于没说（他既不知道值在哪、也改不动它）。新部署的出厂形态是
+// api_key=test_key 且未设面板密码，把「设一个自己的面板密码」做成向导：
 //
 //   - GET  /panel/api/setup/status  无鉴权，返回 {setup_required}：
-//     当前密钥仍为出厂默认值时为 true（前端据此把密钥门切换为
-//     「设置新密钥」形态）。暴露面仅「是否待初始化」，与路由器首启
-//     向导同级；密钥一旦自定义（含空 = 主动关鉴权）即永久 false。
+//     面板密码未设置且 api_key 仍为出厂默认值（config.example.json 的
+//     "test_key"）时为 true。设置密码（或 api_key 已自定义/显式关鉴权）
+//     即永久 false。暴露面仅「是否待初始化」，与路由器首启向导同级。
 //   - POST /panel/api/setup/key     仅初始化窗口期可用：body
-//     {"api_key":"..."}，写盘复用 SaveConfig 闭包（merge 旧配置 →
-//     同一套校验 → 原子落盘 → live 热生效，网关侧鉴权同步换新值）。
-//     初始化完成后本端点永远 403——杜绝「事后改 key 接管面板」。
+//     {"password":"..."}，写盘复用 SaveConfig 闭包（深 merge 旧配置 →
+//     同一套校验 → 原子落盘 → live 热生效）。此后本端点永远 403——
+//     杜绝「事后改密码接管面板」。
 //
-// 已自定义过密钥的存量部署（如 NAS 上 lylywayr）不受影响：status 恒
-// false，向导从不出现；改密钥走既有路径（面板「配置」页 api_key 字段，
-// 热生效）。空密钥（显式关闭鉴权）同样不触发向导——那是用户的主动
-// 选择，不是待初始化状态。
+// 密钥体系（与 api_key 分离，用户 2026-11-18 设计）：
+//   - 面板密码（panel.password）：人用，管面板后台；
+//   - API key（api_key）：客户端机器用，管网关 /v1 接入，在面板「接入指南」
+//     里自定义或随机生成（前端实现，走既有 saveConfig）。
+// 向导只设面板密码；API key 的更换是登录后在接入指南里的事。
+//
+// 存量部署（api_key 已自定义、面板密码未设）不受影响：status 恒 false，
+// 向导从不出现，面板继续认 api_key（panelKey 回落）。
 import (
 	"encoding/json"
 	"io"
@@ -29,21 +32,29 @@ import (
 )
 
 // factoryDefaultAPIKey 出厂默认密钥（config.example.json 的 api_key 值）。
-// 仅作为「未初始化」的哨兵值使用；setup 之后任何值（含再次改回本值，
-// 会 setupKey 显式拒绝）都不再触发向导。
+// 仅作为「未初始化」的哨兵值使用之一。
 const factoryDefaultAPIKey = "test_key"
 
-// setupStatus 初始化状态探测（无鉴权）：密钥仍为出厂默认时 setup_required=true。
+// panelPassword 当前面板密码（Live 优先，回落静态字段；空 = 未设置）。
+func (p *Panel) panelPassword() string {
+	if p.cfg.Live != nil {
+		return p.cfg.Live.Load().PanelPassword
+	}
+	return p.cfg.PanelPassword
+}
+
+// setupStatus 初始化状态探测（无鉴权）：面板密码未设 + api_key 仍为出厂
+// 默认时 setup_required=true。
 func (p *Panel) setupStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"setup_required": p.apiKey() == factoryDefaultAPIKey,
+		"setup_required": p.panelPassword() == "" && p.apiKey() == factoryDefaultAPIKey,
 	})
 }
 
-// setupKey 初始化设置新密钥（仅出厂默认密钥窗口期可用，此后永久 403）。
+// setupKey 初始化设置面板登录密码（仅出厂默认窗口期可用，此后永久 403）。
 func (p *Panel) setupKey(w http.ResponseWriter, r *http.Request) {
-	if p.apiKey() != factoryDefaultAPIKey {
-		// 已初始化（或鉴权已显式关闭）：向导通道关闭。不用 401——那会让
+	if p.panelPassword() != "" || p.apiKey() != factoryDefaultAPIKey {
+		// 已初始化（或 api_key 已自定义）：向导通道关闭。不用 401——那会让
 		// 前端误走「密钥不正确」重试分支；403 + 明确语义让前端直接回落登录态。
 		writeErr(w, http.StatusForbidden, "setup already completed")
 		return
@@ -53,36 +64,32 @@ func (p *Panel) setupKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		APIKey string `json:"api_key"`
+		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "read body: "+err.Error())
 		return
 	}
-	k := strings.TrimSpace(body.APIKey)
+	pw := strings.TrimSpace(body.Password)
 	switch {
-	case k == "":
-		writeErr(w, http.StatusBadRequest, "api_key required")
+	case pw == "":
+		writeErr(w, http.StatusBadRequest, "password required")
 		return
-	case len([]rune(k)) < 6:
-		writeErr(w, http.StatusBadRequest, "密钥至少需要 6 个字符")
-		return
-	case k == factoryDefaultAPIKey:
-		writeErr(w, http.StatusBadRequest, "新密钥不能与出厂默认值相同")
+	case len([]rune(pw)) < 6:
+		writeErr(w, http.StatusBadRequest, "面板密码至少需要 6 个字符")
 		return
 	}
-	// SaveConfig 是 merge 语义（main.go saveConfig：旧配置为底、incoming
-	// 覆盖同名键），只提交 api_key 即完成替换，其余配置原样保留。
-	if _, err := p.cfg.SaveConfig([]byte(`{"api_key":` + jsonQuote(k) + `}`)); err != nil {
+	// SaveConfig 是深 merge 语义（main.go mergeConfigMaps：嵌套对象递归合并），
+	// 只提交 panel.password 即完成设置，panel.package_detail_limit 等原样保留。
+	frag, err := json.Marshal(map[string]any{"panel": map[string]any{"password": pw}})
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	log.Printf("panel: 初始化向导完成，访问密钥已由用户自定义（长度 %d，热生效）", len([]rune(k)))
+	if _, err := p.cfg.SaveConfig(frag); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	log.Printf("panel: 初始化向导完成，面板登录密码已由用户自定义（长度 %d，热生效）", len([]rune(pw)))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-// jsonQuote JSON 字符串转义（json.Marshal 单值的快捷方式）。
-func jsonQuote(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
 }

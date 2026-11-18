@@ -29,6 +29,10 @@ type Config struct {
 	Panel struct {
 		// PackageDetailLimit 积分构成页单账号默认展示的最近到期包数；<=0 回落 5。
 		PackageDetailLimit int `json:"package_detail_limit"`
+		// Password 面板登录密码（与 APIKey 分离）：设置后面板 API 只认它，
+		// APIKey 不再能进面板；空 = 面板沿用 APIKey 鉴权（存量部署兼容形态）。
+		// 网关 /v1 鉴权始终只用 APIKey，两者可独立轮换。热生效（livecfg）。
+		Password string `json:"password"`
 	} `json:"panel"`
 
 	Logging struct {

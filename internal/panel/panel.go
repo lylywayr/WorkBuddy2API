@@ -39,6 +39,10 @@ type Config struct {
 	Scheduler *scheduler.Scheduler // 手动触发签到/保活；nil 时对应接口返回 501
 	AuthDir   string               // OAuth 登录完成后凭证落盘目录
 	APIKey    string               // 空 = 不鉴权（与主服务同语义）；与 Live 同时给出时 Live 优先
+	// PanelPassword 面板登录密码（config.panel.password，与 APIKey 分离）：
+	// 静态字段供 Live 为 nil 的裸用/测试路径；Live 优先。空 = 面板沿用
+	// APIKey 鉴权（存量部署兼容形态）。
+	PanelPassword string
 	RedisMode string               // "upstash" / "noop"，仅观测透出
 	Version   string               // 面板版本号（展示用）
 
@@ -214,7 +218,7 @@ func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // 即用新值（无需重启）。
 func (p *Panel) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !httpauth.VerifyBearer(r, p.apiKey()) {
+		if !httpauth.VerifyBearer(r, p.panelKey()) {
 			writeErr(w, http.StatusUnauthorized, "invalid_api_key")
 			return
 		}
@@ -222,10 +226,26 @@ func (p *Panel) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// apiKey 当前生效密钥（Live 优先，回落静态字段）。
+// apiKey 当前生效网关密钥（Live 优先，回落静态字段）。
 func (p *Panel) apiKey() string {
 	if p.cfg.Live != nil {
 		return p.cfg.Live.Load().APIKey
+	}
+	return p.cfg.APIKey
+}
+
+// panelKey 面板登录密钥：PanelPassword 设置后只认它（api_key 不再能进面板，
+// 泄露 api_key 只影响网关接入）；未设置时沿用 api_key（存量部署行为不变）。
+// Live 优先，回落静态字段。
+func (p *Panel) panelKey() string {
+	if p.cfg.Live != nil {
+		if pw := p.cfg.Live.Load().PanelPassword; pw != "" {
+			return pw
+		}
+		return p.cfg.Live.Load().APIKey
+	}
+	if p.cfg.PanelPassword != "" {
+		return p.cfg.PanelPassword
 	}
 	return p.cfg.APIKey
 }
