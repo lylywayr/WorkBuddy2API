@@ -5,6 +5,7 @@ package upstream
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -209,6 +210,9 @@ func (c *Client) ChatHeaders(req *http.Request, a *auth.Auth, clientIP string, m
 	if a != nil && !a.IsGlobal() {
 		if a.EnterpriseID != "" {
 			req.Header.Set("X-Enterprise-Id", a.EnterpriseID)
+			// X-Tenant-Id（5.11.3 新增确认）：官方 buildVlmGatewayHeaders 中与
+			// X-Enterprise-Id 同值成对出现。
+			req.Header.Set("X-Tenant-Id", a.EnterpriseID)
 		} else {
 			req.Header.Set("X-No-Enterprise-Id", "1")
 		}
@@ -273,6 +277,13 @@ func (c *Client) injectConversationHeaders(req *http.Request, meta ChatMeta) {
 	// B3-SpanId 与 messageID 解耦（官方 applyTraceHeaders 独立随机 16 hex），
 	// 避免带横线 UUID 前 16 位含 '-' 破坏 B3 规范。
 	spanID := session.NewMessageID()[:16]
+	// 链路族独立随机（对齐官方 applyTraceHeaders：randomBytes(16)/(8)/(8)）：
+	// trace 32 hex、parentSpan 16 hex，与消息/会话 ID 均无关。
+	parentSpanID := session.NewMessageID()[:16]
+	traceHex := session.NewMessageID()
+	// acp-connection-id：官方为会话级 UUID（VlmSessionLedger.acquire 时
+	// randomUUID 生成，会话期间稳定）。网关按会话头稳定派生模拟同形态。
+	req.Header.Set("acp-connection-id", deriveACPConnectionID(meta))
 	// 会话头三元组必须齐全：国际端点收紧通道校验后，缺 X-Conversation-ID 的
 	// 请求会直接 400 / 11128（conversation id missing）。入站没带会话 ID 时
 	// 本级补一个 32 hex（与 X-Conversation-Request-ID 的零值兜底同口径），
@@ -288,14 +299,14 @@ func (c *Client) injectConversationHeaders(req *http.Request, meta ChatMeta) {
 	req.Header.Set("X-Root-Request-ID", convReqID)
 	traceID := meta.TraceID
 	if traceID == "" {
-		traceID = convReqID
+		traceID = traceHex // 与 X-B3-TraceId 同源（官方 applyTraceHeaders 两者同值）
 	}
 	req.Header.Set("X-Trace-ID", traceID)
-	b3Trace := convReqID
-	if !validTraceID(b3Trace) {
-		b3Trace = spanID + spanID // 非法 B3 TraceId → 回落恒 32 hex（两段独立 16 hex 拼接）
-	}
-	req.Header.Set("X-B3-TraceId", b3Trace)
+	// 链路族全套（官方 applyTraceHeaders）：traceparent（W3C）+ b3 单头 + B3 多头。
+	req.Header.Set("traceparent", "00-"+traceHex+"-"+spanID+"-01")
+	req.Header.Set("b3", traceHex+"-"+spanID+"-1-"+parentSpanID)
+	req.Header.Set("X-B3-TraceId", traceHex)
+	req.Header.Set("X-B3-ParentSpanId", parentSpanID)
 	req.Header.Set("X-B3-SpanId", spanID)
 	req.Header.Set("X-B3-Sampled", "1")
 }
@@ -304,7 +315,27 @@ func (c *Client) injectConversationHeaders(req *http.Request, meta ChatMeta) {
 // 官方客户端生成的 conversationRequestId 是 32 位 hex（UUID 去横线），入站透传值
 // 可能是任意形状（含横线/超长/非 hex），直接塞进 B3 头会破坏链路关联（issue #35）。
 func validTraceID(s string) bool {
-	if len(s) != 16 && len(s) != 32 {
+	return isHexID(s, 16) || isHexID(s, 32)
+}
+
+// deriveACPConnectionID 官方 acp-connection-id 为会话级 UUID（VlmSessionLedger
+// 会话创建时 randomUUID 生成一次、会话期间稳定，5.11.3 asar 逆向）。网关按
+// ConversationID 稳定派生同形态 UUID：同一会话所有请求同值，不同会话互异；
+// 无会话上下文时退化为每请求新 UUID（等价新建会话）。
+func deriveACPConnectionID(meta ChatMeta) string {
+	if meta.ConversationID == "" {
+		return session.NewConversationID()
+	}
+	sum := sha256.Sum256([]byte("acp:" + meta.ConversationID))
+	b := sum[:16]
+	b[6] = (b[6] & 0x0f) | 0x40 // UUID version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // RFC 4122 variant
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// isHexID 判断 s 是否恰为 n 位十六进制（大小写均可）。
+func isHexID(s string, n int) bool {
+	if len(s) != n {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
