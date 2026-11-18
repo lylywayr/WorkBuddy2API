@@ -43,8 +43,8 @@ type Config struct {
 	// 静态字段供 Live 为 nil 的裸用/测试路径；Live 优先。空 = 面板沿用
 	// APIKey 鉴权（存量部署兼容形态）。
 	PanelPassword string
-	RedisMode string               // "upstash" / "noop"，仅观测透出
-	Version   string               // 面板版本号（展示用）
+	RedisMode     string // "upstash" / "noop"，仅观测透出
+	Version       string // 面板版本号（展示用）
 
 	// Live 运行期可变配置（在线改配置立即生效）。
 	Live *livecfg.Holder

@@ -765,6 +765,7 @@ var reportGap = 1050 * time.Millisecond
 // （scheduler 的签到抖动同源），panel 侧两个参数：
 //   - accountStartJitter：队列每账号开工前随机延迟（错峰开工）
 //   - itemJitterMax：队列项间在 reportGap 基础上叠加随机
+//
 // 测试可清零（autotask_claim_test.go 已清 reportGap，同处补清抖动）。
 var (
 	accountStartJitter = 90 * time.Second

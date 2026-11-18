@@ -16,7 +16,7 @@ import (
 
 // Snapshot 一次读取的不可变配置视图。
 type Snapshot struct {
-	APIKey               string              // 网关 /v1 鉴权密钥；空 = 不鉴权
+	APIKey string // 网关 /v1 鉴权密钥；空 = 不鉴权
 	// PanelPassword 面板登录密码（config.panel.password）；空 = 面板沿用
 	// APIKey 鉴权（存量部署兼容形态）。与 APIKey 分离后：泄露 API key 只影响
 	// 网关接入（可单独轮换），面板后台始终由独立密码把守。
